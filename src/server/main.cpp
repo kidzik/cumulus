@@ -7,49 +7,74 @@
 #include <sys/types.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include "../common/transfer.h"
 
-void error(const char *msg)
-{
-    perror(msg);
-    exit(1);
+int loop_messages(int socket){
+  printf("[server] waiting for messages...");
+  CUM_MSG cmsg;
+  while (!recieve_message(socket, &cmsg)){
+    
+  }
 }
 
-int main(int argc, char *argv[])
-{
-     int sockfd, newsockfd, portno;
+int cum_listen(int portno){
+     int sockfd, newsockfd;
      socklen_t clilen;
-     char buffer[256];
+     char revbuf[256];
      struct sockaddr_in serv_addr, cli_addr;
      int n;
-     if (argc < 2) {
-         fprintf(stderr,"ERROR, no port provided\n");
-         exit(1);
-     }
      sockfd = socket(AF_INET, SOCK_STREAM, 0);
      if (sockfd < 0) 
         error("ERROR opening socket");
      bzero((char *) &serv_addr, sizeof(serv_addr));
-     portno = atoi(argv[1]);
      serv_addr.sin_family = AF_INET;
      serv_addr.sin_addr.s_addr = INADDR_ANY;
      serv_addr.sin_port = htons(portno);
      if (bind(sockfd, (struct sockaddr *) &serv_addr,
               sizeof(serv_addr)) < 0) 
               error("ERROR on binding");
+
      listen(sockfd,5);
-     clilen = sizeof(cli_addr);
-     newsockfd = accept(sockfd, 
-                 (struct sockaddr *) &cli_addr, 
-                 &clilen);
-     if (newsockfd < 0) 
+
+     int result = 0;
+
+     printf("[server] waiting for connections...");
+     while (result == 0){
+       clilen = sizeof(cli_addr);
+       int newsockfd = accept(sockfd, 
+			  (struct sockaddr *) &cli_addr, 
+			  &clilen);
+       if (newsockfd < 0) 
           error("ERROR on accept");
-     bzero(buffer,256);
-     n = read(newsockfd,buffer,255);
-     if (n < 0) error("ERROR reading from socket");
-     printf("Here is the message: %s\n",buffer);
-     n = write(newsockfd,"I got your message",18);
-     if (n < 0) error("ERROR writing to socket");
-     close(newsockfd);
+
+       pid_t pid = fork();
+       printf("[server] connection opened...");
+       if (pid < 0)
+	 result = -1;
+       else if (pid == 0) { /* client code */
+	 close(sockfd); //the client doesn't need to listen
+	 loop_messages(newsockfd);
+	 return 0; //have the child leave the while loop -- probably not what I want
+       }
+       else {
+	 close(newsockfd);
+       }             
+     }
      close(sockfd);
+}
+
+int main()
+{
+    cum_listen(PORT);
+
+    printf("[client] receive file sent by server to receive.txt...");
+    char* f_name = (char*)"local/receive.txt";
+    FILE *fp = fopen(f_name, "a");
+    if(fp == NULL) printf("File %s cannot be opened.\n", f_name);
+    else
+    {
+    }
+    printf("[client] connection lost.\n");
+
      return 0; 
 }

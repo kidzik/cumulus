@@ -1,4 +1,4 @@
 all:
-	g++ main.cpp -o client
-scanner:
-	g++ scanner.cpp -o scanner
+	$(MAKE) -C ../common/
+	g++ -static scanner.cpp ../common/libtransfer.a -o client
+

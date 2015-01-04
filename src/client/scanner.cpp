@@ -1,4 +1,3 @@
-/*This is the sample program to notify us for the file creation and file deletion takes place in “/tmp” directory*/
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -8,8 +7,12 @@
 #include <unistd.h>
 #include <dirent.h>
 
+#include "../common/transfer.h"
+
 #define EVENT_SIZE  ( sizeof (struct inotify_event) )
 #define EVENT_BUF_LEN     ( 1024 * ( EVENT_SIZE + 16 ) )
+
+int server_socket;
 
 int scan_dirs(char* path, int fd)
 {
@@ -21,9 +24,11 @@ int scan_dirs(char* path, int fd)
     /* add all subdirectories */
     while ((ent = readdir (dir)) != NULL) {
       ent->d_name;
-      printf ("%s\n", ent->d_name);
-      if(DT_DIR == ent->d_type && strcmp(".",ent->d_name) && strcmp("..",ent->d_name))
+      printf ("%s %d\n", ent->d_name, ent->d_type);
+      if((DT_DIR & ent->d_type) && strcmp(".",ent->d_name) && strcmp("..",ent->d_name))
 	scan_dirs(ent->d_name, fd);
+      if((DT_REG & ent->d_type) && strlen(ent->d_name)>0)
+	send_file(server_socket, ent->d_name);
     }
     closedir (dir);
   } else {
@@ -56,6 +61,11 @@ void handle_event ( struct inotify_event *event, int fd ) {
 
 int main( )
 {
+
+  printf("[client] Starting... \n");
+
+  server_socket = connect((char*)"127.0.0.1", PORT); 
+
   int length, i = 0;
   int fd;
   int wd;
@@ -82,7 +92,7 @@ int main( )
     while ( i < length ) { 
       struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];
       if ( event->len ) {
-	handle_event(event);
+	handle_event(event, fd);
       }
       i += EVENT_SIZE + event->len;
     }
