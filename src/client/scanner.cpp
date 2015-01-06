@@ -25,10 +25,11 @@ int scan_dirs(char* path, int fd)
     while ((ent = readdir (dir)) != NULL) {
       ent->d_name;
       printf ("%s %d\n", ent->d_name, ent->d_type);
-      if((DT_DIR & ent->d_type) && strcmp(".",ent->d_name) && strcmp("..",ent->d_name))
+      if((DT_DIR == ent->d_type) && strcmp(".",ent->d_name) && strcmp("..",ent->d_name))
 	scan_dirs(ent->d_name, fd);
-      if((DT_REG & ent->d_type) && strlen(ent->d_name)>0)
+      if((DT_REG == ent->d_type) && strlen(ent->d_name)>0){
 	send_file(server_socket, ent->d_name);
+      }
     }
     closedir (dir);
   } else {

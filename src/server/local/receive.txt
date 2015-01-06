@@ -1,1 +1,0 @@
-int send_file(char *path, char *ip, int portno)

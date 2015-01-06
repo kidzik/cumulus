@@ -1,11 +1,12 @@
 #include "transfer.h"
+#include <sys/stat.h>
 
-off_t fsize(char *file) {
-    struct stat;
-    if (stat(file, &stat) == 0) {
-        return stat.st_size;
-    }
-    return 0;
+#define MIN(a,b) (((a)<(b))?(a):(b))
+
+off_t fsize(char *path) {
+  struct stat st;
+  stat(path, &st);
+  return st.st_size;
 }
 
 void error(const char *msg)
@@ -21,7 +22,7 @@ int connect(char *ip, int portno)
     struct sockaddr_in serv_addr;
     struct hostent *server;
 
-    printf("Connecting to %s at %d", ip, portno);
+    printf("Connecting to %s at %d\n", ip, portno);
 
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) 
@@ -40,30 +41,36 @@ int connect(char *ip, int portno)
     serv_addr.sin_port = htons(portno);
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
+    printf("Connected\n");
+    return sockfd;
 }
 
 int disconnect(int socket){
     close(socket);
 }
 
-int send_message(int socket, CUM_MSG* msg){
-  if (send(socket, (char*)msg, sizeof(CUM_MSG), 0) < 0)
-    error("ERROR: Failed to send message");
+int send_message(int socket, char* msg, int length){
+  int f_block_sz = 0;
+  f_block_sz = send(socket, (char*)msg, length, 0);
+  if (f_block_sz < 0)
+    error("ERROR: Failed to send message\n");
+  printf("%d bytes sent\n", f_block_sz);
 }
 
-int recieve_message(int socket, CUM_MSG *msg)
+int recieve_message(int socket, char* msg, int length)
 {
   int f_block_sz = 0;
-  int success = 0;
-  while(success == 0)
-    {
-      while(f_block_sz = recv(socket, msg, sizeof(CUM_MSG), 0))
-	if(f_block_sz < 0)
-	  error("Receive msg error.\n");
+  while(1){
+    f_block_sz = recv(socket, msg, length, 0);
+    if(f_block_sz < 0)
+      error("Receive msg error.\n");
+    if(f_block_sz == length)
+      break;
+    if(f_block_sz > 0)
+      error("Receive msg error (too little bytes).\n");
+  }
 
-      printf("ok!\n");
-      success = 1;
-    }
+  printf("%d bytes recieved\n", f_block_sz);
   return 0;
 }
 
@@ -71,7 +78,7 @@ int send_content(int socket, char* path){
     // Open file
     char sdbuf[BUFSIZE]; // Send buffer
     printf("Send %s... ", path);
-    FILE *fp = fopen(path, "r");
+    FILE *fp = fopen(path, "rb");
     if(fp == NULL)
       {
 	printf("ERROR: File %s not found.\n", path);
@@ -81,14 +88,18 @@ int send_content(int socket, char* path){
 
     // Read file
     int f_block_sz;
+    int total_sent = 0;
     while((f_block_sz = fread(sdbuf, sizeof(char), BUFSIZE, fp))>0)
       {
+	int sent = send(socket, sdbuf, f_block_sz, 0);
 	// Send file
-	if(send(socket, sdbuf, f_block_sz, 0) < 0)
+	if(sent < 0)
 	  {
 	    printf("ERROR: Failed to send file %s.\n", path);
 	    break;
 	  }
+	total_sent += sent;
+	printf("%d ", total_sent);
 	bzero(sdbuf, BUFSIZE);
       }
 
@@ -98,21 +109,72 @@ int send_content(int socket, char* path){
     return 0;
 }
 
+int recieve_content(int socket, char* path, int size){
+    // Open file
+    char revbuf[BUFSIZE]; // Recieve buffer
+    
+    printf("Recieve %s... ", path);
+    FILE *fp = fopen(path, "wb");
+    if(fp == NULL)
+      {
+	printf("ERROR: Could not open file %s\n", path);
+	exit(1);
+      }
+    bzero(revbuf, BUFSIZE);
+
+    int f_block_sz;
+    int recieved = 0;
+    while(recieved < size)
+      {
+	f_block_sz = recv(socket, revbuf, MIN(BUFSIZE, size - recieved), 0);
+	if(f_block_sz < 0)
+	  {
+	    printf("Receive file error.\n");
+	    break;
+	  }
+	int write_sz = fwrite(revbuf, sizeof(char), f_block_sz, fp);
+	if(write_sz < f_block_sz)
+	  {
+	    printf("File write failed.\n");
+	    break;
+	  }
+	bzero(revbuf, BUFSIZE);
+	recieved += f_block_sz;
+	printf("%d ", recieved);	
+      }
+    printf("ok!\n");
+    fclose(fp); 
+
+    return 0;
+}
+
 int send_file(int sockfd, char* path){
   CUM_MSG cmsg;
   cmsg.id = MSG_FILE;
-  send_message(sockfd, &cmsg, sizeof(CUM_MSG));
+  send_message(sockfd, (char*)&cmsg, sizeof(CUM_MSG));
 
   CUM_FILE cfile;
   cfile.timestamp;
   cfile.checksum;
   cfile.flags;
   cfile.size = fsize(path);
-  strcpy(path,cfile.path)
-  send_message(sockfd, &cmsg, sizeof(CUM_FILE));
+  strcpy(cfile.path, path);
+  printf("Sending %d bytes from %s...\n", cfile.size, cfile.path);
+  send_message(sockfd, (char*)&cfile, sizeof(CUM_FILE));
 
   // send new file msg
   // send file descriptor
   send_content(sockfd, path);
+}
+
+int recieve_file(int sockfd){
+  CUM_FILE cfile;
+  char path[BUFSIZE];
+
+  recieve_message(sockfd, (char*)&cfile, sizeof(CUM_FILE));
+  printf("Downloading %d bytes to %s...\n", cfile.size, cfile.path);
+  sprintf(path, "local/%s", cfile.path);
+
+  recieve_content(sockfd, path, cfile.size);
 }
 

@@ -10,10 +10,13 @@
 #include "../common/transfer.h"
 
 int loop_messages(int socket){
-  printf("[server] waiting for messages...");
+  printf("[server] waiting for messages...\n");
   CUM_MSG cmsg;
-  while (!recieve_message(socket, &cmsg)){
-    
+  while (!recieve_message(socket, (char*)&cmsg, sizeof(CUM_MSG))){
+    printf("id    = %d\nflags = %d\n", cmsg.id, cmsg.flags);
+    if (cmsg.id == MSG_FILE){
+      recieve_file(socket);
+    }
   }
 }
 
@@ -38,7 +41,7 @@ int cum_listen(int portno){
 
      int result = 0;
 
-     printf("[server] waiting for connections...");
+     printf("[server] waiting for connections...\n");
      while (result == 0){
        clilen = sizeof(cli_addr);
        int newsockfd = accept(sockfd, 
@@ -48,7 +51,7 @@ int cum_listen(int portno){
           error("ERROR on accept");
 
        pid_t pid = fork();
-       printf("[server] connection opened...");
+       printf("[server] connection opened...\n");
        if (pid < 0)
 	 result = -1;
        else if (pid == 0) { /* client code */
@@ -67,14 +70,7 @@ int main()
 {
     cum_listen(PORT);
 
-    printf("[client] receive file sent by server to receive.txt...");
-    char* f_name = (char*)"local/receive.txt";
-    FILE *fp = fopen(f_name, "a");
-    if(fp == NULL) printf("File %s cannot be opened.\n", f_name);
-    else
-    {
-    }
-    printf("[client] connection lost.\n");
+    printf("[server] connection lost.\n");
 
-     return 0; 
+    return 0; 
 }

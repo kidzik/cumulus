@@ -2,7 +2,7 @@
 
 #define MAX_PATH   256
 #define BUFSIZE    256
-#define PORT       10022
+#define PORT       10026
 
 #define MSG_OK     1
 #define MSG_READY  2
