@@ -15,3 +15,4 @@ int send_message(int socket, char *msg, int length);
 void error(const char *msg);
 int connect(char *ip, int portno);
 int recieve_file(int sockfd);
+int send_dirs(int socket, const char* path);

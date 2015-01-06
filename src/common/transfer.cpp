@@ -1,13 +1,12 @@
 #include "transfer.h"
 #include <sys/stat.h>
+#include <sys/file.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <dirent.h>
+#include <openssl/md5.h>
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
-
-off_t fsize(char *path) {
-  struct stat st;
-  stat(path, &st);
-  return st.st_size;
-}
 
 void error(const char *msg)
 {
@@ -74,16 +73,9 @@ int recieve_message(int socket, char* msg, int length)
   return 0;
 }
 
-int send_content(int socket, char* path){
-    // Open file
+int send_content(int socket, FILE* fp)
+{
     char sdbuf[BUFSIZE]; // Send buffer
-    printf("Send %s... ", path);
-    FILE *fp = fopen(path, "rb");
-    if(fp == NULL)
-      {
-	printf("ERROR: File %s not found.\n", path);
-	exit(1);
-      }
     bzero(sdbuf, BUFSIZE);
 
     // Read file
@@ -95,11 +87,10 @@ int send_content(int socket, char* path){
 	// Send file
 	if(sent < 0)
 	  {
-	    printf("ERROR: Failed to send file %s.\n", path);
+	    printf("ERROR: Failed to send file.\n");
 	    break;
 	  }
 	total_sent += sent;
-	printf("%d ", total_sent);
 	bzero(sdbuf, BUFSIZE);
       }
 
@@ -140,7 +131,6 @@ int recieve_content(int socket, char* path, int size){
 	  }
 	bzero(revbuf, BUFSIZE);
 	recieved += f_block_sz;
-	printf("%d ", recieved);	
       }
     printf("ok!\n");
     fclose(fp); 
@@ -148,26 +138,78 @@ int recieve_content(int socket, char* path, int size){
     return 0;
 }
 
-int send_file(int sockfd, char* path){
-  CUM_MSG cmsg;
-  cmsg.id = MSG_FILE;
-  send_message(sockfd, (char*)&cmsg, sizeof(CUM_MSG));
+int md5file(char* path, unsigned char* sum)
+{
+  MD5_CTX c;
+  char buf[512];
+  ssize_t bytes;
 
-  CUM_FILE cfile;
-  cfile.timestamp;
-  cfile.checksum;
-  cfile.flags;
-  cfile.size = fsize(path);
-  strcpy(cfile.path, path);
-  printf("Sending %d bytes from %s...\n", cfile.size, cfile.path);
-  send_message(sockfd, (char*)&cfile, sizeof(CUM_FILE));
+  MD5_Init(&c);
+  bytes=read(STDIN_FILENO, buf, 512);
+  while(bytes > 0)
+    {
+      MD5_Update(&c, buf, bytes);
+      bytes=read(STDIN_FILENO, buf, 512);
+    }
 
-  // send new file msg
-  // send file descriptor
-  send_content(sockfd, path);
+  MD5_Final(sum, &c);
+  return 0;
 }
 
-int recieve_file(int sockfd){
+int send_file(int sockfd, char* path)
+{
+  FILE *fp = 0;
+
+  CUM_MSG cmsg;
+  cmsg.id = MSG_FILE;
+
+  CUM_FILE cfile;
+  struct stat st;
+  stat(path, &st);
+
+  cfile.timestamp = st.st_atim.tv_sec;
+  cfile.mode = st.st_mode;
+  cfile.size = st.st_size;
+  md5file(path, cfile.checksum);
+
+  strcpy(cfile.path, path);
+
+  if (S_ISDIR(cfile.mode))
+  {
+    // Directory
+    cfile.size = 0;
+  }
+  else 
+  {
+    // Open file
+    printf("Send %s... ", path);
+    fp = fopen(path, "rb");
+    if(fp == NULL)
+      {
+	printf("ERROR: File %s not found.\n", path);
+	return -1;
+      }
+  }
+  printf("Sending %d bytes from %s...\n", cfile.size, cfile.path);
+
+  // send new file msg
+  send_message(sockfd, (char*)&cmsg, sizeof(CUM_MSG));
+
+  // send file descriptor
+  send_message(sockfd, (char*)&cfile, sizeof(CUM_FILE));
+
+  // does he want it?
+  recieve_message(sockfd, (char*)&cmsg, sizeof(CUM_MSG));
+
+  // send contents
+  if (fp && cmsg.id != MSG_REFUSE){
+    send_content(sockfd, fp);
+    fclose(fp);
+  }
+}
+
+int recieve_file(int sockfd)
+{
   CUM_FILE cfile;
   char path[BUFSIZE];
 
@@ -175,6 +217,50 @@ int recieve_file(int sockfd){
   printf("Downloading %d bytes to %s...\n", cfile.size, cfile.path);
   sprintf(path, "local/%s", cfile.path);
 
-  recieve_content(sockfd, path, cfile.size);
+  // do we have a newer file?
+  CUM_MSG cmsg;
+  cmsg.id = MSG_OK;
+  send_message(sockfd, (char*)&cmsg, sizeof(CUM_MSG));
+
+  if (cmsg.id == MSG_REFUSE)
+    return 0;
+
+  if (S_ISDIR(cfile.mode)){
+    struct stat st = {0};
+  
+    if (stat(path, &st) == -1) {
+      mkdir(path, 0700);
+      printf("Directory %s created\n", cfile.path);
+    }
+
+  }
+  else
+    recieve_content(sockfd, path, cfile.size);
 }
 
+int send_dirs(int socket, const char* path)
+{
+  DIR *dir;
+  struct dirent *ent;
+  if ((dir = opendir (path)) != NULL) {
+    /* add all subdirectories */
+    while ((ent = readdir (dir)) != NULL) {
+      char fullpath[MAX_PATH];
+      sprintf(fullpath, "%s/%s", path, ent->d_name);
+
+      printf ("%s %d\n", fullpath, ent->d_type);
+      if (!strcmp(".",ent->d_name) || !strcmp("..",ent->d_name))
+	continue;
+      if(DT_REG == ent->d_type || DT_DIR == ent->d_type)
+	send_file(socket, fullpath);
+      if(DT_DIR == ent->d_type)
+	send_dirs(socket, fullpath);
+    }
+    closedir (dir);
+  } else {
+    /* could not open directory */
+    perror ("");
+    return EXIT_FAILURE;
+  }
+  return 0;
+}

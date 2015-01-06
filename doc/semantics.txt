@@ -1,0 +1,57 @@
+Let S mean server and C mean client. Consider a file /foo and following scenarios.
+
+------------
+Requirements
+------------
+
+1. S has /foo.
+ 1.1. C does not have /foo
+  1.1.1. C had the newest version of /foo
+   Action: delete S:/foo
+  1.1.2. C had an older version of /foo
+   Action: create C:/foo.conflict
+  1.1.3. C didn't have /foo
+   Action: download S:/foo
+ 1.2. C has /foo
+  1.2.1. C:/foo and S:/foo are the same
+   Action: do nothing
+  1.2.2. C had version which is on S
+   Action: Send C:/foo to S
+  1.2.3. S had version which is on C
+   Action: Send S:/foo to C
+  1.2.4. S and C have version derived from something old
+
+2. S does not have /foo
+ 2.1. Other client deleted S:/foo
+  2.1.1. C:/foo has the same version as the deleted S:/foo
+   Action: Delete C:/foo
+  2.1.2. C:/foo is newer than the deleted S:/foo (but derived from it)
+   Action: C:/foo to C:/foo.conflict
+ 2.2. C:/foo is a new file
+  Action: Upload C:/foo
+
+Therefore:
+ - client needs to know if the version from server is newer then his
+ - server needs to know if the version from client is newer then his
+
+Other requirements:
+ - we keep as much metadata as possible on server's site
+
+--------
+Protocol
+--------
+
+Client generates his unique ID.
+Server remembers all clients.
+
+For each pair <file,client> he remembers the version which was sent.
+  If the version is old, tries to send the file, including old and new checksum.
+  If old checksum is different then client's actual then conflict. 
+
+Client recieves files, as above.
+
+If client has new version it pushes it to server.
+  If server get's new version from client but did't manage to update client before then conflict.
+  If client had an actual version then server saves the file.
+
+Deleting: TODO.

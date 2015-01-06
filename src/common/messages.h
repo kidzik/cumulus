@@ -1,12 +1,18 @@
 #include <stdint.h>
+#include <openssl/md5.h>
 
-#define MAX_PATH   256
-#define BUFSIZE    256
-#define PORT       10026
+#define MAX_PATH     512
+#define BUFSIZE      256
+#define CHECKSUM_LEN MD5_DIGEST_LENGTH
+#define PORT         10027
+#define CLIENTID_LEN 64
 
 #define MSG_OK     1
 #define MSG_READY  2
 #define MSG_FILE   3
+#define MSG_REFUSE 4
+
+#define CUM_DIR    1
 
 struct CUM_MSG {
   uint32_t id;
@@ -15,8 +21,8 @@ struct CUM_MSG {
 
 struct CUM_FILE {
   uint32_t timestamp;
-  uint32_t checksum;
-  uint32_t flags;
+  unsigned char checksum[MD5_DIGEST_LENGTH];
+  uint32_t mode;
   uint32_t size;
-  char path[256];
+  char path[MAX_PATH];
 };
