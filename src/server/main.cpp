@@ -16,6 +16,27 @@ using namespace std;
 
 const string cumdir = "local";
 
+typedef std::pair<string,string> spair;
+
+map<spair, string> c_file_ver; 
+map<string, string> s_file_ver; 
+
+map<int, string> clients;
+
+int authenticate(int socket)
+{
+  printf("[server] authenticate...\n");
+  CUM_AUTH cauth;
+  CUM_MSG cmsg;
+  cmsg.id = MSG_OK;
+  recieve_message(socket, (char*)&cauth, sizeof(CUM_AUTH));
+  clients[socket] = string(cauth.clientid);
+  send_message(socket, (char*)&cmsg, sizeof(CUM_MSG));
+  printf("[server] cilent %s authenticated...\n",cauth.clientid);
+  return 0;
+
+}
+
 int synchronise(int socket)
 {
   printf("[server] synchronise...\n");
@@ -30,7 +51,8 @@ int loop_messages(int socket)
   while (!recieve_message(socket, (char*)&cmsg, sizeof(CUM_MSG))){
     printf("id    = %d\nflags = %d\n", cmsg.id, cmsg.flags);
     if (cmsg.id == MSG_FILE){
-      recieve_file(socket);
+      CUM_FILE cfile;
+      recieve_file(socket, &cfile);
     }
   }
 }
@@ -55,6 +77,7 @@ int cum_listen(int sockfd){
       result = -1;
     else if (pid == 0) { /* client code */
       close(sockfd); //the client doesn't need to listen
+      authenticate(newsockfd);
       synchronise(newsockfd);
       loop_messages(newsockfd);
       return 0; //have the child leave the while loop -- probably not what I want

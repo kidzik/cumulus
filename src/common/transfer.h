@@ -14,5 +14,5 @@ int recieve_message(int socket, char *msg, int length);
 int send_message(int socket, char *msg, int length);
 void error(const char *msg);
 int connect(char *ip, int portno);
-int recieve_file(int sockfd);
+int recieve_file(int sockfd, CUM_FILE *cfile);
 int send_dirs(int socket, const char* path);

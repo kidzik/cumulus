@@ -208,14 +208,13 @@ int send_file(int sockfd, char* path)
   }
 }
 
-int recieve_file(int sockfd)
+int recieve_file(int sockfd, CUM_FILE *cfile)
 {
-  CUM_FILE cfile;
   char path[BUFSIZE];
 
-  recieve_message(sockfd, (char*)&cfile, sizeof(CUM_FILE));
-  printf("Downloading %d bytes to %s...\n", cfile.size, cfile.path);
-  sprintf(path, "local/%s", cfile.path);
+  recieve_message(sockfd, (char*)cfile, sizeof(CUM_FILE));
+  printf("Downloading %d bytes to %s...\n", cfile->size, cfile->path);
+  sprintf(path, "local/%s", cfile->path);
 
   // do we have a newer file?
   CUM_MSG cmsg;
@@ -225,17 +224,17 @@ int recieve_file(int sockfd)
   if (cmsg.id == MSG_REFUSE)
     return 0;
 
-  if (S_ISDIR(cfile.mode)){
+  if (S_ISDIR(cfile->mode)){
     struct stat st = {0};
   
     if (stat(path, &st) == -1) {
       mkdir(path, 0700);
-      printf("Directory %s created\n", cfile.path);
+      printf("Directory %s created\n", cfile->path);
     }
 
   }
   else
-    recieve_content(sockfd, path, cfile.size);
+    recieve_content(sockfd, path, cfile->size);
 }
 
 int send_dirs(int socket, const char* path)

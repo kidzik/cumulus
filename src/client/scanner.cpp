@@ -17,8 +17,6 @@
 
 using namespace std;
 
-
-
 map<string, int> wds;
 map<int, string> wdpaths;
 int server_socket;
@@ -34,14 +32,31 @@ int rstr(char *str, const int length)
   return 0;
 }
 
+int authenticate(int socket, char* clientid)
+{
+  printf("[client] authenticate...\n");
+  CUM_AUTH cauth;
+  strcpy(cauth.clientid, clientid);
+  CUM_MSG cmsg;
+  send_message(socket, (char*)&cauth, sizeof(CUM_AUTH));
+  recieve_message(socket, (char*)&cmsg, sizeof(CUM_MSG));
+  if (cmsg.id != MSG_OK){
+    perror("Could not log in");
+    exit(0);
+  }
+  return 0;
+}
+
 int synchronise(int socket)
 {
   printf("[client] synchronise...\n");
   CUM_MSG cmsg;
   while (!recieve_message(socket, (char*)&cmsg, sizeof(CUM_MSG))){
     printf("id    = %d\nflags = %d\n", cmsg.id, cmsg.flags);
-    if (cmsg.id == MSG_FILE)
-      recieve_file(socket);
+    if (cmsg.id == MSG_FILE){
+      CUM_FILE cfile;
+      recieve_file(socket, &cfile);
+    }
     if (cmsg.id == MSG_OK)
       break;
   }
@@ -109,12 +124,12 @@ int identify(char* cid){
   if (!fp){
     FILE *fp = fopen(".cumulus","w");
     rstr(cid, CLIENTID_LEN);
-    write(fp, cid, CLIENTID_LEN);
+    fwrite(cid, 1, CLIENTID_LEN, fp);
     fclose(fp);
     return 0;
   }
 
-  read(fp, cid, CLIENTID_LEN);
+  fread(cid, 1, CLIENTID_LEN, fp);
   fclose(fp);
   return 0;
   
@@ -124,7 +139,7 @@ int main( )
 {
   char clientid[CLIENTID_LEN];
   identify(clientid);
-  printf("[client] Starting client %s... \n", clietnid);
+  printf("[client] Starting client %s... \n", clientid);
 
   server_socket = connect((char*)"127.0.0.1", PORT); 
 
@@ -143,6 +158,7 @@ int main( )
 
   char path[MAX_PATH];
 
+  authenticate(server_socket, clientid);
   synchronise(server_socket);
 
   scan_dirs(cumdir.c_str(),fd);
