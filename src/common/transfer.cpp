@@ -138,58 +138,92 @@ int recieve_content(int socket, char* path, int size){
     return 0;
 }
 
-int md5file(char* path, unsigned char* sum)
+int md5file(char* path, char* sum)
 {
+  FILE* fp = fopen(path,"rb");
+  if(!fp)
+    perror("No such file");
   MD5_CTX c;
+  unsigned char digest[16];
   char buf[512];
   ssize_t bytes;
 
   MD5_Init(&c);
-  bytes=read(STDIN_FILENO, buf, 512);
+  bytes=fread(buf, 1, 512, fp);
   while(bytes > 0)
     {
       MD5_Update(&c, buf, bytes);
-      bytes=read(STDIN_FILENO, buf, 512);
+      bytes = fread(buf, 1, 512, fp);
     }
 
-  MD5_Final(sum, &c);
+  MD5_Final(digest, &c);
+  fclose(fp);
+
+  char bb[CHECKSUM_LEN];
+  for(int i = 0; i < CHECKSUM_LEN/2; ++i)
+    sprintf(bb+i*2, "%02x", (unsigned int)digest[i]);
+  strcpy(sum, bb);
+  printf("%s\n",sum);
+  return 0;
+}
+
+int get_file_desc(char* path, CUM_FILE* cfile)
+{
+  struct stat st;
+  if (stat(path, &st ) == -1){
+    printf("get_file_desc: file '%s' does not exist\n", path);
+    return -1;
+  }
+
+  cfile->timestamp = st.st_atim.tv_sec;
+  cfile->mode = st.st_mode;
+  cfile->size = st.st_size;
+  md5file(path, cfile->checksum);
+
+  strcpy(cfile->path, path);
   return 0;
 }
 
 int send_file(int sockfd, char* path)
 {
+  int notafile = 0;
   FILE *fp = 0;
+  fp = fopen(path, "rb");  
+  if (fp == 0)
+    notafile = 1;
 
   CUM_MSG cmsg;
   cmsg.id = MSG_FILE;
+  cmsg.flags = 0;
 
   CUM_FILE cfile;
-  struct stat st;
-  stat(path, &st);
-
-  cfile.timestamp = st.st_atim.tv_sec;
-  cfile.mode = st.st_mode;
-  cfile.size = st.st_size;
-  md5file(path, cfile.checksum);
-
-  strcpy(cfile.path, path);
+  if (get_file_desc(path, &cfile) == -1)
+    return -1;
 
   if (S_ISDIR(cfile.mode))
   {
+    printf("send_file: %s is a directory\n", path);
     // Directory
     cfile.size = 0;
   }
-  else 
+  else if (notafile){
+    printf("ERROR: Not a dir, not a file.\n");
+    return -1;
+  }
+  else if (S_ISREG(cfile.mode))
   {
     // Open file
-    printf("Send %s... ", path);
-    fp = fopen(path, "rb");
+    printf("Send %s...\n", path);
+
     if(fp == NULL)
       {
 	printf("ERROR: File %s not found.\n", path);
 	return -1;
       }
   }
+  else
+    return 0;
+  
   printf("Sending %d bytes from %s...\n", cfile.size, cfile.path);
 
   // send new file msg
@@ -205,16 +239,14 @@ int send_file(int sockfd, char* path)
   if (fp && cmsg.id != MSG_REFUSE){
     send_content(sockfd, fp);
     fclose(fp);
-  }
+    }
 }
 
 int recieve_file(int sockfd, CUM_FILE *cfile)
 {
   char path[BUFSIZE];
 
-  recieve_message(sockfd, (char*)cfile, sizeof(CUM_FILE));
-  printf("Downloading %d bytes to %s...\n", cfile->size, cfile->path);
-  sprintf(path, "local/%s", cfile->path);
+  sprintf(path, "%s", cfile->path);
 
   // do we have a newer file?
   CUM_MSG cmsg;
@@ -237,29 +269,3 @@ int recieve_file(int sockfd, CUM_FILE *cfile)
     recieve_content(sockfd, path, cfile->size);
 }
 
-int send_dirs(int socket, const char* path)
-{
-  DIR *dir;
-  struct dirent *ent;
-  if ((dir = opendir (path)) != NULL) {
-    /* add all subdirectories */
-    while ((ent = readdir (dir)) != NULL) {
-      char fullpath[MAX_PATH];
-      sprintf(fullpath, "%s/%s", path, ent->d_name);
-
-      printf ("%s %d\n", fullpath, ent->d_type);
-      if (!strcmp(".",ent->d_name) || !strcmp("..",ent->d_name))
-	continue;
-      if(DT_REG == ent->d_type || DT_DIR == ent->d_type)
-	send_file(socket, fullpath);
-      if(DT_DIR == ent->d_type)
-	send_dirs(socket, fullpath);
-    }
-    closedir (dir);
-  } else {
-    /* could not open directory */
-    perror ("");
-    return EXIT_FAILURE;
-  }
-  return 0;
-}

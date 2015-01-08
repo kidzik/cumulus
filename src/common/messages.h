@@ -3,8 +3,8 @@
 
 #define MAX_PATH     512
 #define BUFSIZE      256
-#define CHECKSUM_LEN MD5_DIGEST_LENGTH
-#define PORT         10027
+#define CHECKSUM_LEN 33
+#define PORT         10032
 #define CLIENTID_LEN 64
 
 #define MSG_ERROR  0
@@ -23,7 +23,7 @@ struct CUM_MSG {
 
 struct CUM_FILE {
   uint32_t timestamp;
-  unsigned char checksum[MD5_DIGEST_LENGTH];
+  char checksum[CHECKSUM_LEN];
   uint32_t mode;
   uint32_t size;
   char path[MAX_PATH];

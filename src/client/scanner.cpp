@@ -55,16 +55,24 @@ int synchronise(int socket)
     printf("id    = %d\nflags = %d\n", cmsg.id, cmsg.flags);
     if (cmsg.id == MSG_FILE){
       CUM_FILE cfile;
+      recieve_message(socket, (char*)&cfile, sizeof(CUM_FILE));
+      CUM_MSG cresp;
+      cresp.id = MSG_OK;
+      send_message(socket, (char*)&cresp, sizeof(CUM_MSG));
+      
       recieve_file(socket, &cfile);
+
     }
     if (cmsg.id == MSG_OK)
       break;
   }
+  printf("[client] synchronised...\n");
 }
 
 int scan_dirs(const char* path, int fd)
 {
   int wd;
+  printf("[client] iwatch added");
   wd = inotify_add_watch( fd, path, IN_CREATE | IN_DELETE );
   wds[path] = wd;
   wdpaths[wd] = path;
@@ -95,26 +103,28 @@ int scan_dirs(const char* path, int fd)
 }
 
 void handle_event ( struct inotify_event *event, int fd ) {
+  char fullpath[MAX_PATH]; 
+  sprintf(fullpath, "%s/%s", wdpaths[event->wd].c_str(), event->name);
+
   if ( event->mask & IN_CREATE ) {
     if ( event->mask & IN_ISDIR ) {
-      printf( "New directory %s created.\n", event->name );
-      scan_dirs(event->name, fd);
-      send_file(server_socket, event->name);
+      printf( "New directory %s created.\n", fullpath );
+      scan_dirs(fullpath, fd);
+      send_file(server_socket, fullpath);
     }
     else {
-      printf( "New file %s created.\n", event->name );
-      send_file(server_socket, event->name);
+      printf( "New file %s created.\n", fullpath );
+      send_file(server_socket, fullpath);
     }
   }
   else if ( event->mask & IN_DELETE ) {
     if ( event->mask & IN_ISDIR ) {
-      printf( "Directory %s deleted.\n", event->name );
-      wds.erase(wdpaths[event->wd]);
+      printf( "Directory %s deleted.\n", fullpath );
+      wds.erase(fullpath);
       wdpaths.erase(event->wd);
-
     }
     else {
-      printf( "File %s deleted.\n", event->name );
+      printf( "File %s deleted.\n", fullpath );
     }
   }
 }

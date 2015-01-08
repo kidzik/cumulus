@@ -16,3 +16,4 @@ void error(const char *msg);
 int connect(char *ip, int portno);
 int recieve_file(int sockfd, CUM_FILE *cfile);
 int send_dirs(int socket, const char* path);
+int get_file_desc(char* path, CUM_FILE* cfile);

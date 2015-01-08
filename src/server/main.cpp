@@ -7,6 +7,7 @@
 #include <sys/types.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <dirent.h>
 #include "../common/transfer.h"
 
 #include <map>
@@ -17,11 +18,48 @@ using namespace std;
 const string cumdir = "local";
 
 typedef std::pair<string,string> spair;
+typedef map<spair, string> mspairs;
+typedef mspairs::iterator imspairs;
 
-map<spair, string> c_file_ver; 
-map<string, string> s_file_ver; 
+mspairs c_file_ver; 
 
 map<int, string> clients;
+
+
+int save_map(mspairs* m)
+{
+  FILE* fp = fopen("map.txt","w");
+  fprintf(fp,"%d\n",(int)m->size());
+
+  for(imspairs iterator = m->begin(); iterator != m->end(); iterator++) {
+    fprintf(fp,"%s %s %s\n", iterator->first.first.c_str(),
+	    iterator->first.second.c_str(),
+	    iterator->second.c_str());
+  }
+  fclose(fp);
+  return 0;
+}
+
+int load_map(mspairs* m)
+{
+  FILE* fp = fopen("map.txt","r");
+  if (fp == 0)
+    return 0;
+  
+  char a[BUFSIZE],b[BUFSIZE],c[BUFSIZE];
+  int n;
+
+  fscanf(fp, "%d", &n);
+
+  for (int i = 0; i<n; i++){
+    fscanf(fp,"%s %s %s\n", a, b, c);
+    (*m)[spair(string(a),string(b))] = string(c);
+  }
+
+  fclose(fp);
+}
+
+
 
 int authenticate(int socket)
 {
@@ -37,10 +75,50 @@ int authenticate(int socket)
 
 }
 
+int send_dirs(int socket, const char* path)
+{
+  int res;
+  DIR *dir;
+  struct dirent *ent;
+  if ((dir = opendir (path)) != NULL) {
+    /* add all subdirectories */
+    while ((ent = readdir (dir)) != NULL) {
+      char fullpath[MAX_PATH];
+      sprintf(fullpath, "%s/%s", path, ent->d_name);
+
+      printf ("%s %d\n", fullpath, ent->d_type);
+      if (!strcmp(".",ent->d_name) || !strcmp("..",ent->d_name))
+	continue;
+      if(DT_REG == ent->d_type || DT_DIR == ent->d_type){
+	res = send_file(socket, fullpath);
+	if (!res){
+	  CUM_FILE cfile;
+	  get_file_desc(fullpath, &cfile);
+
+	  c_file_ver[spair("server", string(fullpath))] = string((const char*)cfile.checksum);
+	  c_file_ver[spair(clients[socket], string(fullpath))] = string((const char*)cfile.checksum);
+	  save_map(&c_file_ver);
+	}
+      }
+      if(DT_DIR == ent->d_type)
+	send_dirs(socket, fullpath);
+    }
+    closedir (dir);
+  } else {
+    /* could not open directory */
+    perror ("");
+    return EXIT_FAILURE;
+  }
+  return 0;
+}
+
 int synchronise(int socket)
 {
   printf("[server] synchronise...\n");
   send_dirs(socket, cumdir.c_str());
+  CUM_MSG cmsg;
+  cmsg.id = MSG_OK;
+  send_message(socket, (char*)&cmsg, sizeof(CUM_MSG));
 }
 
 int loop_messages(int socket)
@@ -52,12 +130,31 @@ int loop_messages(int socket)
     printf("id    = %d\nflags = %d\n", cmsg.id, cmsg.flags);
     if (cmsg.id == MSG_FILE){
       CUM_FILE cfile;
+
+      recieve_message(socket, (char*)&cfile, sizeof(CUM_FILE));
+
+      // if client changed the newest version or an old one 
+      if (c_file_ver.count(spair(clients[socket], string(cfile.path))) > 0 &&
+	  c_file_ver[spair(clients[socket], string(cfile.path))].compare(c_file_ver[spair("server", string(cfile.path))]) != 0){
+	printf("Synchronisation error\n");
+      }
+
       recieve_file(socket, &cfile);
+
+      // remember that client has this version of the file
+      c_file_ver[spair(clients[socket], string(cfile.path))] = string((const char*)cfile.checksum);
+
+      // rememebr that server has this version of the file
+      c_file_ver[spair("server", string(cfile.path))] = string((const char*)cfile.checksum);
+      save_map(&c_file_ver);
+      
+      // TODO: Send to other clients
     }
   }
 }
 
-int cum_listen(int sockfd){
+int cum_listen(int sockfd)
+{
   socklen_t clilen;
   int result = 0;
   struct sockaddr_in cli_addr;
@@ -76,11 +173,11 @@ int cum_listen(int sockfd){
     if (pid < 0)
       result = -1;
     else if (pid == 0) { /* client code */
-      close(sockfd); //the client doesn't need to listen
+      close(sockfd); 
       authenticate(newsockfd);
       synchronise(newsockfd);
       loop_messages(newsockfd);
-      return 0; //have the child leave the while loop -- probably not what I want
+      return 0; 
     }
     else {
       close(newsockfd);
@@ -114,6 +211,9 @@ int cum_init(int portno)
 int main()
 {
   int sockfd = cum_init(PORT);
+
+  load_map(&c_file_ver);
+
   cum_listen(sockfd);
   close(sockfd);
 
