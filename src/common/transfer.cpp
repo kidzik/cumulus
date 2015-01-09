@@ -8,12 +8,22 @@
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
+//! Outputs the error message and stops the app
+/*!
+\param msg the error message
+*/
 void error(const char *msg)
 {
     perror(msg);
     exit(0);
 }
 
+//! Connects to the server at given ip and port
+/*!
+\param ip ip or hostname of the server
+\param portno number of port
+\return Returns 0 if succeeded
+*/
 int connect(char *ip, int portno)
 {
     int sockfd, n;
@@ -44,10 +54,13 @@ int connect(char *ip, int portno)
     return sockfd;
 }
 
-int disconnect(int socket){
-    close(socket);
-}
-
+//! Sends message of given length
+/*!
+\param socket socket
+\param msg message
+\param length message length
+\return Returns 0 if succeeded
+*/
 int send_message(int socket, char* msg, int length){
   int f_block_sz = 0;
   f_block_sz = send(socket, (char*)msg, length, 0);
@@ -56,6 +69,13 @@ int send_message(int socket, char* msg, int length){
   printf("%d bytes sent\n", f_block_sz);
 }
 
+//! Recieves message of a given length
+/*!
+\param socket socket
+\param msg message
+\param length message length
+\return Returns 0 if succeeded
+*/
 int recieve_message(int socket, char* msg, int length)
 {
   int f_block_sz = 0;
@@ -73,6 +93,12 @@ int recieve_message(int socket, char* msg, int length)
   return 0;
 }
 
+//! Sends file contents
+/*!
+\param socket socket
+\param fp pointer of an opened file to send
+\return Returns 0 if succeeded
+*/
 int send_content(int socket, FILE* fp)
 {
     char sdbuf[BUFSIZE]; // Send buffer
@@ -100,6 +126,14 @@ int send_content(int socket, FILE* fp)
     return 0;
 }
 
+//! Recieves file contents
+/*!
+\param socket socket
+\param path to save the file
+\return Returns 0 if succeeded
+
+TODO: Recieve full file before saving
+*/
 int recieve_content(int socket, char* path, int size){
     // Open file
     char revbuf[BUFSIZE]; // Recieve buffer
@@ -138,6 +172,14 @@ int recieve_content(int socket, char* path, int size){
     return 0;
 }
 
+//! Computes chacksum of a given file
+/*!
+\param path file's path
+\param sum points where to write the checksum
+\return Returns 0 if succeeded
+
+TODO: Recieve full file before saving
+*/
 int md5file(char* path, char* sum)
 {
   FILE* fp = fopen(path,"rb");
@@ -167,6 +209,12 @@ int md5file(char* path, char* sum)
   return 0;
 }
 
+//! Reads file stats and saves to CUM_FILE structure
+/*!
+\param path file's path
+\param cfile structure to write
+\return Returns 0 if succeeded
+*/
 int get_file_desc(char* path, CUM_FILE* cfile)
 {
   struct stat st;
@@ -184,6 +232,12 @@ int get_file_desc(char* path, CUM_FILE* cfile)
   return 0;
 }
 
+//! Sends file msg, header, recieves the accep and sends the contents
+/*!
+\param sockfd socket for sending
+\param path file's path
+\return Returns 0 if succeeded
+*/
 int send_file(int sockfd, char* path)
 {
   int notafile = 0;
@@ -242,6 +296,12 @@ int send_file(int sockfd, char* path)
     }
 }
 
+//! Recieves file. Run AFTER recieving the msg and file descriptor first
+/*!
+\param sockfd socket for sending
+\param cfile file description
+\return Returns 0 if succeeded
+*/
 int recieve_file(int sockfd, CUM_FILE *cfile)
 {
   char path[BUFSIZE];

@@ -4,7 +4,7 @@
 #define MAX_PATH     512
 #define BUFSIZE      256
 #define CHECKSUM_LEN 33
-#define PORT         10032
+#define PORT         10033
 #define CLIENTID_LEN 64
 
 #define MSG_ERROR  0

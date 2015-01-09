@@ -22,6 +22,11 @@ typedef mis::iterator imis;
 mspairs c_file_ver; 
 mis clients;
 
+//! Saves '<client, file> -> version' map
+/*!
+\param mspairs the map to serialise
+\return Returns 0 if succeeded
+*/
 int save_map(mspairs* m)
 {
   FILE* fp = fopen("map.txt","w");
@@ -36,6 +41,11 @@ int save_map(mspairs* m)
   return 0;
 }
 
+//! Loads '<client, file> -> version' map
+/*!
+\param mspairs the map to load to
+\return Returns 0 if succeeded
+*/
 int load_map(mspairs* m)
 {
   FILE* fp = fopen("map.txt","r");
@@ -55,8 +65,11 @@ int load_map(mspairs* m)
   fclose(fp);
 }
 
-
-
+//! Authenticates the client on given socket
+/*!
+\param socket the socket of the cilent
+\return Returns 0 if succeeded
+*/
 int authenticate(int socket)
 {
   printf("[server] authenticate...\n");
@@ -71,6 +84,15 @@ int authenticate(int socket)
 
 }
 
+//! Updates versions of files in the map of server and client
+/*!
+\param socket the socket of the cilent
+\param fullpath path of the file which was just updated
+\return Returns 0 if succeeded
+
+TODO: The save at each update is very very very inefficient,
+but I am too lazy for this sort of coding for the moment
+*/
 int upade_versions(int socket, char* fullpath){
   CUM_FILE cfile;
   get_file_desc(fullpath, &cfile);
@@ -81,6 +103,14 @@ int upade_versions(int socket, char* fullpath){
   return 0;
 }
 
+//! Sends the directories and files from given path to socket
+/*!
+\param socket the socket of the cilent
+\param path path of the directory
+\return Returns 0 if succeeded
+
+TODO: Should be done only if the client does not have given file
+*/
 int send_dirs(int socket, const char* path)
 {
   int res;
@@ -112,6 +142,11 @@ int send_dirs(int socket, const char* path)
   return 0;
 }
 
+//! Synchronise the client
+/*!
+\param socket the socket of the cilent
+\return Returns 0 if succeeded
+*/
 int synchronise(int socket)
 {
   printf("[server] synchronise...\n");
@@ -121,6 +156,13 @@ int synchronise(int socket)
   send_message(socket, (char*)&cmsg, sizeof(CUM_MSG));
 }
 
+//! Sends the file to other clients
+/*!
+\param mcls map socket -> clientid
+\param mwecn map <clientid,path> -> version
+\param fullpath file to send
+\return Returns 0 if succeeded
+*/
 int send_to_others(mis* mcls, mspairs* mvers, char* fullpath)
 {
   int res;
@@ -136,9 +178,13 @@ int send_to_others(mis* mcls, mspairs* mvers, char* fullpath)
   return 0;
 }
 
+//! Wait for messages from given process (run in a different thread)
+/*!
+\param socket socket to wait on
+\return Returns 0 if succeeded
+*/
 int loop_messages(int socket)
 {
-
   printf("[server] waiting for messages...\n");
   CUM_MSG cmsg;
   while (!recieve_message(socket, (char*)&cmsg, sizeof(CUM_MSG))){
@@ -179,6 +225,11 @@ int loop_messages(int socket)
   }
 }
 
+//! Listen for connections
+/*!
+\param sockfd socket to listen on
+\return Returns 0 if ended without errors (child process ended)
+*/
 int cum_listen(int sockfd)
 {
   socklen_t clilen;
@@ -203,14 +254,20 @@ int cum_listen(int sockfd)
       authenticate(newsockfd);
       synchronise(newsockfd);
       loop_messages(newsockfd);
-      return 0; 
+      break;
     }
     else {
       close(newsockfd);
     }             
   }
+  return 0;
 }
 
+//! Initialise the server on the given port
+/*!
+\param portno port to listen on
+\return Returns 0 if no errors
+*/
 int cum_init(int portno)
 {
   // Setup the server
@@ -234,6 +291,10 @@ int cum_init(int portno)
   return(sockfd);
 }
 
+//! Initialise the server and wait for connections
+/*!
+\return Returns 0 if no errors
+*/
 int main()
 {
   int sockfd = cum_init(PORT);

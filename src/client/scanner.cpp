@@ -23,7 +23,13 @@ int server_socket;
 
 const string cumdir = "local";
 
-int rstr(char *str, const int length)
+//! Generates a random string of given length
+/*!
+\param str string to write the result to
+\param length length of the random string
+\return Returns 0 if succeeded
+*/
+int random_string(char *str, const int length)
 {
   char alphabeth[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
   for (int i = 0; i < length; ++i)
@@ -32,6 +38,14 @@ int rstr(char *str, const int length)
   return 0;
 }
 
+//! Authenticates the client on given socket
+/*!
+\param socket server socket
+\param clientid clientid
+\return Returns 0 if succeeded
+
+TODO: will be changed to id, login, pass
+*/
 int authenticate(int socket, char* clientid)
 {
   printf("[client] authenticate...\n");
@@ -47,6 +61,14 @@ int authenticate(int socket, char* clientid)
   return 0;
 }
 
+//! Synchronises data with the server
+/*!
+\param socket server socket
+\return Returns 0 if succeeded
+
+TODO:
+1) Should recieve previous checksum to see if the file was not changed in the meanwhile
+*/
 int synchronise(int socket)
 {
   printf("[client] synchronise...\n");
@@ -69,6 +91,12 @@ int synchronise(int socket)
   printf("[client] synchronised...\n");
 }
 
+//! Adds inotify to the directory and subdirectories and sends all the files in the tree
+/*!
+\param path directory to be scanned
+\param file descriptor of the inotify
+\return Returns 0 if succeeded
+*/
 int scan_dirs(const char* path, int fd)
 {
   int wd;
@@ -102,6 +130,11 @@ int scan_dirs(const char* path, int fd)
   return 0;
 }
 
+//! Handles inotify event and sends data to the server
+/*!
+\param event inotify event to handle
+\param fd file descriptor of inotify
+*/
 void handle_event ( struct inotify_event *event, int fd ) {
   char fullpath[MAX_PATH]; 
   sprintf(fullpath, "%s/%s", wdpaths[event->wd].c_str(), event->name);
@@ -129,11 +162,16 @@ void handle_event ( struct inotify_event *event, int fd ) {
   }
 }
 
-int identify(char* cid){
+//! Reads the clients unique id. If does not exist, creates one
+/*!
+\param cid points where to write the id
+\return Returns 0 if succeeded
+*/
+int identify_client(char* cid){
   FILE *fp = fopen(".cumulus","r");
   if (!fp){
     FILE *fp = fopen(".cumulus","w");
-    rstr(cid, CLIENTID_LEN);
+    random_string(cid, CLIENTID_LEN);
     fwrite(cid, 1, CLIENTID_LEN, fp);
     fclose(fp);
     return 0;
@@ -145,10 +183,14 @@ int identify(char* cid){
   
 }
 
+//! The main loop, recieves events from inotify
+/*!
+\return Returns 0 if succeeded
+*/
 int main( )
 {
   char clientid[CLIENTID_LEN];
-  identify(clientid);
+  identify_client(clientid);
   printf("[client] Starting client %s... \n", clientid);
 
   server_socket = connect((char*)"127.0.0.1", PORT); 
@@ -174,7 +216,6 @@ int main( )
   scan_dirs(cumdir.c_str(),fd);
 
   while(length = read( fd, buffer, EVENT_BUF_LEN )){
-
     /*checking for error*/
     if ( length < 0 ) {
       perror( "read" );
