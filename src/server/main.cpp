@@ -1,7 +1,3 @@
-/* A simple server in the internet domain using TCP
-   The port number is passed as an argument */
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h> 
@@ -19,12 +15,12 @@ const string cumdir = "local";
 
 typedef std::pair<string,string> spair;
 typedef map<spair, string> mspairs;
+typedef map<int, string> mis;
 typedef mspairs::iterator imspairs;
+typedef mis::iterator imis;
 
 mspairs c_file_ver; 
-
-map<int, string> clients;
-
+mis clients;
 
 int save_map(mspairs* m)
 {
@@ -45,17 +41,17 @@ int load_map(mspairs* m)
   FILE* fp = fopen("map.txt","r");
   if (fp == 0)
     return 0;
-  
+
   char a[BUFSIZE],b[BUFSIZE],c[BUFSIZE];
   int n;
 
   fscanf(fp, "%d", &n);
 
-  for (int i = 0; i<n; i++){
+  for (int i = 0; i<n; i++)
+  {
     fscanf(fp,"%s %s %s\n", a, b, c);
     (*m)[spair(string(a),string(b))] = string(c);
   }
-
   fclose(fp);
 }
 
@@ -75,6 +71,16 @@ int authenticate(int socket)
 
 }
 
+int upade_versions(int socket, char* fullpath){
+  CUM_FILE cfile;
+  get_file_desc(fullpath, &cfile);
+
+  c_file_ver[spair("server", string(fullpath))] = string((const char*)cfile.checksum);
+  c_file_ver[spair(clients[socket], string(fullpath))] = string((const char*)cfile.checksum);
+  save_map(&c_file_ver);
+  return 0;
+}
+
 int send_dirs(int socket, const char* path)
 {
   int res;
@@ -91,14 +97,8 @@ int send_dirs(int socket, const char* path)
 	continue;
       if(DT_REG == ent->d_type || DT_DIR == ent->d_type){
 	res = send_file(socket, fullpath);
-	if (!res){
-	  CUM_FILE cfile;
-	  get_file_desc(fullpath, &cfile);
-
-	  c_file_ver[spair("server", string(fullpath))] = string((const char*)cfile.checksum);
-	  c_file_ver[spair(clients[socket], string(fullpath))] = string((const char*)cfile.checksum);
-	  save_map(&c_file_ver);
-	}
+	if (!res)
+	  upade_versions(socket, fullpath);
       }
       if(DT_DIR == ent->d_type)
 	send_dirs(socket, fullpath);
@@ -119,6 +119,21 @@ int synchronise(int socket)
   CUM_MSG cmsg;
   cmsg.id = MSG_OK;
   send_message(socket, (char*)&cmsg, sizeof(CUM_MSG));
+}
+
+int send_to_others(mis* mcls, mspairs* mvers, char* fullpath)
+{
+  int res;
+  for(imis iterator = mcls->begin(); iterator != mcls->end(); iterator++) {
+    if (mvers->count(spair(iterator->second,fullpath)) == 0 ||
+	(*mvers)[spair(iterator->second,fullpath)].compare((*mvers)[spair("server",fullpath)]) == 0)
+      continue;
+    res = send_file(iterator->first, fullpath);
+    if (!res)
+      upade_versions(iterator->first, fullpath);    
+  }
+
+  return 0;
 }
 
 int loop_messages(int socket)
@@ -146,7 +161,18 @@ int loop_messages(int socket)
 
       // rememebr that server has this version of the file
       c_file_ver[spair("server", string(cfile.path))] = string((const char*)cfile.checksum);
-      save_map(&c_file_ver);
+
+      pid_t pid = fork();      
+
+      if (pid < 0)
+	break;
+      else if (pid == 0) { /* send to others */
+	send_to_others(&clients, &c_file_ver, cfile.path);
+	return 0; 
+      }
+      else {
+	continue;
+      }             
       
       // TODO: Send to other clients
     }
